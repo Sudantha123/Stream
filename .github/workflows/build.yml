@@ -1,30 +1,60 @@
-name: StreamVault Build Automation
+name: Build StreamVault Test
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.21"
+  BINARY_NAME: streamvault
 
 jobs:
   build:
+    name: Build
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.21' # ඔබේ go.mod එකේ අනුව මාරු කරන්න
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
 
-    - name: Build StreamVault for Linux VPS
-      run: |
-        # AMD64 Linux VPS එක සඳහා build කිරීම (Size එක අඩු කරමින්)
-        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o streamvault ./cmd/main.go
+      # Dependencies ප්‍රශ්න මඟහරවා ගැනීමට modules auto tidy කිරීම
+      - name: Tidy Go Modules
+        run: go mod tidy
 
-    - name: Upload StreamVault Binary
-      uses: actions/upload-artifact@v4
-      with:
-        name: streamvault-binary
-        path: streamvault
-        
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Build binary (linux/amd64)
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build \
+              -ldflags="-s -w" \
+              -trimpath \
+              -o ${{ env.BINARY_NAME }} \
+              ./cmd/main.go
+
+      - name: Show binary info
+        run: |
+          ls -lh ${{ env.BINARY_NAME }}
+          file ${{ env.BINARY_NAME }}
+
+      # Test කිරීමට අවශ්‍ය බයිනරි එක සහ web folder එක විතරක් upload කිරීම
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BINARY_NAME }}-linux-amd64
+          path: |
+            ${{ env.BINARY_NAME }}
+            web/
+          retention-days: 7
+          
