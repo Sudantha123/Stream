@@ -17,6 +17,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
+	"net/url"
+	"path"
+
 	"streamvault/internal/downloader"
 	"streamvault/internal/models"
 	"streamvault/internal/store"
@@ -181,6 +184,21 @@ func jsonErr(w http.ResponseWriter, msg string, code int) {
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
+func titleFromURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Sprintf("video-%s", time.Now().Format("20060102-150405"))
+	}
+	base := path.Base(u.Path)
+	name := strings.TrimSuffix(base, path.Ext(base))
+	name = strings.ReplaceAll(name, "_", " ")
+	name = strings.ReplaceAll(name, "-", " ")
+	if name == "" || name == "." || name == "/" {
+		return fmt.Sprintf("video-%s", time.Now().Format("20060102-150405"))
+	}
+	return name
+}
+
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 	jobs := s.store.AllJobs()
 	sort.Slice(jobs, func(i, j int) bool {
@@ -203,7 +221,7 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request) {
 		req.SegmentLength = 6
 	}
 	if req.Title == "" {
-		req.Title = fmt.Sprintf("video-%s", time.Now().Format("20060102-150405"))
+		req.Title = titleFromURL(req.URL)
 	}
 
 	id := uuid.New().String()
