@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamVault — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080b0f;
+  --surface: #0d1117;
+  --surface2: #161c26;
+  --surface3: #1d2535;
+  --border: #1e2a3a;
+  --accent: #00e5ff;
+  --accent2: #7c3aed;
+  --gold: #f59e0b;
+  --danger: #ef4444;
+  --success: #10b981;
+  --warn: #f59e0b;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --mono: 'Space Mono', monospace;
+  --sans: 'Syne', sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+
+/* Ambient background */
+body::before{
+  content:'';position:fixed;top:0;left:0;right:0;bottom:0;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 20%, rgba(0,229,255,.04) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 80% 80%, rgba(124,58,237,.05) 0%, transparent 60%);
+  pointer-events:none;z-index:0;
+}
+
+/* Nav */
+nav{
+  position:sticky;top:0;z-index:100;
+  background:rgba(8,11,15,.92);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.875rem 1.5rem;
+}
+.logo{display:flex;align-items:center;gap:.625rem;text-decoration:none}
+.logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1rem}
+.logo-text{font-family:var(--sans);font-weight:800;font-size:1.15rem;color:var(--text);letter-spacing:-.01em}
+.logo-badge{font-family:var(--mono);font-size:.65rem;color:var(--accent);background:rgba(0,229,255,.1);border:1px solid rgba(0,229,255,.2);padding:.15rem .4rem;border-radius:4px;margin-left:.25rem}
+.nav-links{display:flex;gap:.5rem}
+.nav-link{color:var(--muted);text-decoration:none;font-size:.875rem;font-weight:600;padding:.4rem .75rem;border-radius:6px;transition:all .2s}
+.nav-link:hover,.nav-link.active{color:var(--text);background:var(--surface2)}
+.ws-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;margin-right:.4rem;transition:background .3s}
+.ws-dot.connected{background:var(--success);box-shadow:0 0 8px var(--success)}
+
+/* Layout */
+main{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:2rem 1.25rem}
+h1{font-size:1.5rem;font-weight:800;margin-bottom:1.5rem;display:flex;align-items:center;gap:.5rem}
+h1 .sub{color:var(--muted);font-size:.875rem;font-weight:400;font-family:var(--mono)}
+
+/* Add job card */
+.add-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  padding:1.5rem;margin-bottom:2rem;
+}
+.add-card h2{font-size:1rem;font-weight:700;margin-bottom:1.25rem;color:var(--accent);letter-spacing:.05em;text-transform:uppercase;font-size:.75rem}
+.form-grid{display:grid;grid-template-columns:1fr auto;gap:.75rem;align-items:end}
+@media(max-width:640px){.form-grid{grid-template-columns:1fr}}
+.input-group{display:flex;flex-direction:column;gap:.4rem}
+.input-group label{font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-family:var(--mono)}
+input,select{
+  background:var(--surface2);border:1px solid var(--border);color:var(--text);
+  padding:.625rem .875rem;border-radius:8px;font-family:var(--mono);font-size:.875rem;
+  outline:none;transition:border-color .2s;width:100%;
+}
+input:focus,select:focus{border-color:var(--accent)}
+input::placeholder{color:var(--muted)}
+.form-row{display:grid;grid-template-columns:1fr auto auto;gap:.75rem;align-items:end;margin-top:.75rem}
+@media(max-width:640px){.form-row{grid-template-columns:1fr 1fr}}
+
+/* Buttons */
+.btn{
+  display:inline-flex;align-items:center;gap:.4rem;
+  padding:.625rem 1.25rem;border-radius:8px;font-family:var(--sans);font-weight:700;font-size:.875rem;
+  cursor:pointer;border:none;transition:all .2s;white-space:nowrap;
+}
+.btn-primary{background:linear-gradient(135deg,var(--accent),#0099cc);color:#000}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,229,255,.3)}
+.btn-danger{background:transparent;color:var(--danger);border:1px solid var(--danger)}
+.btn-danger:hover{background:var(--danger);color:#fff}
+.btn-sm{padding:.375rem .75rem;font-size:.8rem}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+/* Jobs section */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+.section-title{font-size:.875rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-family:var(--mono)}
+.job-count{font-family:var(--mono);font-size:.75rem;background:var(--surface2);padding:.2rem .5rem;border-radius:4px;color:var(--accent)}
+
+/* Job card */
+.job-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:1.25rem;margin-bottom:.875rem;
+  transition:border-color .3s;
+  animation:slideIn .3s ease;
+}
+@keyframes slideIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+.job-card.downloading{border-color:rgba(0,229,255,.2)}
+.job-card.transcoding{border-color:rgba(124,58,237,.2)}
+.job-card.done{border-color:rgba(16,185,129,.2);opacity:.75}
+.job-card.failed{border-color:rgba(239,68,68,.2)}
+.job-card.cancelled{border-color:var(--border);opacity:.5}
+
+.job-top{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:.875rem}
+.job-title{font-weight:700;font-size:.9375rem;line-height:1.3}
+.job-url{font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-top:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px}
+.job-right{display:flex;align-items:center;gap:.5rem;flex-shrink:0}
+
+/* Status badges */
+.badge{
+  font-family:var(--mono);font-size:.7rem;font-weight:700;padding:.2rem .6rem;
+  border-radius:99px;text-transform:uppercase;letter-spacing:.05em;
+}
+.badge-pending{background:rgba(100,116,139,.15);color:var(--muted)}
+.badge-downloading{background:rgba(0,229,255,.1);color:var(--accent)}
+.badge-transcoding{background:rgba(124,58,237,.1);color:#a78bfa}
+.badge-thumbnailing{background:rgba(245,158,11,.1);color:var(--gold)}
+.badge-done{background:rgba(16,185,129,.1);color:var(--success)}
+.badge-failed{background:rgba(239,68,68,.1);color:var(--danger)}
+.badge-cancelled{background:rgba(100,116,139,.1);color:var(--muted)}
+
+/* Progress bars */
+.progress-section{display:flex;flex-direction:column;gap:.625rem}
+.progress-item{display:flex;flex-direction:column;gap:.3rem}
+.progress-label{display:flex;justify-content:space-between;align-items:center}
+.progress-name{font-family:var(--mono);font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.progress-pct{font-family:var(--mono);font-size:.7rem;font-weight:700}
+.progress-bar{height:4px;background:var(--surface3);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;border-radius:2px;transition:width .4s ease;position:relative}
+.progress-fill::after{
+  content:'';position:absolute;top:0;right:0;bottom:0;width:30px;
+  background:linear-gradient(to right,transparent,rgba(255,255,255,.3));
+}
+.fill-download{background:linear-gradient(90deg,var(--accent),#00b4d8)}
+.fill-transcode{background:linear-gradient(90deg,var(--accent2),#7c3aed)}
+
+.progress-meta{display:flex;gap:1.25rem;margin-top:.25rem}
+.meta-item{font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+.meta-item span{color:var(--text);font-weight:700}
+
+/* Speed pulse animation */
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.live{animation:pulse 2s infinite}
+
+/* Error text */
+.job-error{font-family:var(--mono);font-size:.75rem;color:var(--danger);background:rgba(239,68,68,.08);padding:.4rem .75rem;border-radius:6px;margin-top:.5rem}
+
+/* Empty state */
+.empty{text-align:center;padding:3rem 1rem;color:var(--muted)}
+.empty-icon{font-size:3rem;margin-bottom:.75rem;opacity:.3}
+.empty p{font-size:.875rem}
+
+/* Responsive */
+@media(max-width:500px){
+  .job-url{display:none}
+  .progress-meta{flex-wrap:wrap;gap:.625rem}
+}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/" class="logo">
+    <div class="logo-icon">⚡</div>
+    <span class="logo-text">StreamVault</span>
+    <span class="logo-badge">ADMIN</span>
+  </a>
+  <div class="nav-links">
+    <a href="/" class="nav-link">Gallery</a>
+    <a href="/admin" class="nav-link active">Dashboard</a>
+    <span style="display:flex;align-items:center;font-size:.75rem;color:var(--muted);font-family:var(--mono)">
+      <span class="ws-dot" id="wsDot"></span><span id="wsStatus">connecting</span>
+    </span>
+  </div>
+</nav>
+
+<main>
+  <h1>Dashboard <span class="sub">/ job control</span></h1>
+
+  <!-- Add Job -->
+  <div class="add-card">
+    <h2>New Download Job</h2>
+    <div class="form-grid">
+      <div class="input-group">
+        <label>Direct URL</label>
+        <input type="url" id="urlInput" placeholder="https://example.com/video.mp4" autocomplete="off">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="input-group">
+        <label>Title (optional)</label>
+        <input type="text" id="titleInput" placeholder="My Video">
+      </div>
+      <div class="input-group">
+        <label>Segment (sec)</label>
+        <select id="segSelect">
+          <option value="4">4s</option>
+          <option value="6" selected>6s</option>
+          <option value="8">8s</option>
+          <option value="10">10s</option>
+          <option value="12">12s</option>
+          <option value="20">20s</option>
+          <option value="30">30s</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="addJob()" id="addBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        Add Job
+      </button>
+    </div>
+  </div>
+
+  <!-- Jobs -->
+  <div class="section-header">
+    <span class="section-title">Active Jobs</span>
+    <span class="job-count" id="jobCount">0 jobs</span>
+  </div>
+  <div id="jobList">
+    <div class="empty">
+      <div class="empty-icon">📭</div>
+      <p>No active jobs. Paste a direct link above to start.</p>
+    </div>
+  </div>
+</main>
+
+<script>
+const jobs = new Map();
+let ws, wsReconnectTimer;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('wsDot').classList.add('connected');
+    document.getElementById('wsStatus').textContent = 'live';
+  };
+
+  ws.onclose = () => {
+    document.getElementById('wsDot').classList.remove('connected');
+    document.getElementById('wsStatus').textContent = 'reconnecting…';
+    wsReconnectTimer = setTimeout(connect, 2500);
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'job_update') handleJobUpdate(msg.data);
+    else if (msg.type === 'job_done') handleJobDone(msg.data);
+  };
+}
+
+function handleJobUpdate(job) {
+  jobs.set(job.id, job);
+  renderJobs();
+}
+
+function handleJobDone(data) {
+  const job = data.job;
+  jobs.set(job.id, job);
+  renderJobs();
+  // Remove done jobs after 5s
+  setTimeout(() => {
+    if (jobs.get(job.id)?.status === 'done') {
+      jobs.delete(job.id);
+      renderJobs();
+    }
+  }, 5000);
+}
+
+function fmtBytes(b) {
+  if (!b) return '—';
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  if (b < 1073741824) return (b/1048576).toFixed(1) + ' MB';
+  return (b/1073741824).toFixed(2) + ' GB';
+}
+
+function fmtSpeed(bps) {
+  if (!bps) return '—';
+  if (bps < 1048576) return (bps/1024).toFixed(0) + ' KB/s';
+  return (bps/1048576).toFixed(1) + ' MB/s';
+}
+
+function fmtETA(sec) {
+  if (!sec || sec <= 0) return '—';
+  if (sec < 60) return Math.ceil(sec) + 's';
+  if (sec < 3600) return Math.floor(sec/60) + 'm ' + Math.ceil(sec%60) + 's';
+  return Math.floor(sec/3600) + 'h ' + Math.floor((sec%3600)/60) + 'm';
+}
+
+function statusBadge(s) {
+  const labels = {pending:'⏳ pending',downloading:'⬇ downloading',transcoding:'⚙ transcoding',thumbnailing:'🖼 thumb',done:'✓ done',failed:'✕ failed',cancelled:'— cancelled'};
+  return `<span class="badge badge-${s}">${labels[s]||s}</span>`;
+}
+
+function renderJob(job) {
+  const isActive = ['downloading','transcoding','thumbnailing','pending'].includes(job.status);
+  const dlPct = Math.min(100, job.download_pct || 0);
+  const txPct = Math.min(100, job.transcode_pct || 0);
+
+  let progressHTML = '';
+  if (job.status === 'downloading' || (job.status !== 'pending' && job.downloaded_bytes > 0)) {
+    progressHTML += `
+    <div class="progress-item">
+      <div class="progress-label">
+        <span class="progress-name">Download</span>
+        <span class="progress-pct" style="color:var(--accent)">${dlPct.toFixed(1)}%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill fill-download" style="width:${dlPct}%"></div></div>
+      <div class="progress-meta">
+        <div class="meta-item">Speed: <span class="${isActive && job.status==='downloading'?'live':''}">${fmtSpeed(job.download_speed)}</span></div>
+        <div class="meta-item">Done: <span>${fmtBytes(job.downloaded_bytes)}</span> / <span>${fmtBytes(job.total_bytes)}</span></div>
+        <div class="meta-item">ETA: <span>${fmtETA(job.download_eta)}</span></div>
+      </div>
+    </div>`;
+  }
+
+  if (job.status === 'transcoding' || job.transcode_pct > 0) {
+    progressHTML += `
+    <div class="progress-item" style="margin-top:.5rem">
+      <div class="progress-label">
+        <span class="progress-name">HLS Transcode</span>
+        <span class="progress-pct" style="color:#a78bfa">${txPct.toFixed(1)}%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill fill-transcode" style="width:${txPct}%"></div></div>
+      <div class="progress-meta">
+        <div class="meta-item">Segments: <span>${job.transcode_done||0}</span> / <span>${job.transcode_segments||'?'}</span></div>
+      </div>
+    </div>`;
+  }
+
+  const errorHTML = job.error ? `<div class="job-error">⚠ ${job.error}</div>` : '';
+  const cancelBtn = isActive ? `<button class="btn btn-danger btn-sm" onclick="cancelJob('${job.id}')">Cancel</button>` : '';
+
+  return `
+  <div class="job-card ${job.status}" id="job-${job.id}">
+    <div class="job-top">
+      <div>
+        <div class="job-title">${escHtml(job.title||job.id)}</div>
+        <div class="job-url">${escHtml(job.url)}</div>
+      </div>
+      <div class="job-right">
+        ${statusBadge(job.status)}
+        ${cancelBtn}
+      </div>
+    </div>
+    ${progressHTML ? `<div class="progress-section">${progressHTML}</div>` : ''}
+    ${errorHTML}
+  </div>`;
+}
+
+function renderJobs() {
+  const list = document.getElementById('jobList');
+  const count = document.getElementById('jobCount');
+
+  const active = [...jobs.values()].filter(j => j.status !== 'done');
+  count.textContent = active.length + ' job' + (active.length !== 1 ? 's' : '');
+
+  if (active.length === 0) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><p>No active jobs. Paste a direct link above to start.</p></div>`;
+    return;
+  }
+
+  const sorted = active.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  list.innerHTML = sorted.map(renderJob).join('');
+}
+
+async function addJob() {
+  const url = document.getElementById('urlInput').value.trim();
+  if (!url) { alert('Please enter a URL'); return; }
+
+  const btn = document.getElementById('addBtn');
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
+
+  try {
+    const resp = await fetch('/api/jobs', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        url,
+        title: document.getElementById('titleInput').value.trim(),
+        segment_length: parseInt(document.getElementById('segSelect').value)
+      })
+    });
+    if (!resp.ok) { const e = await resp.json(); throw new Error(e.error); }
+    document.getElementById('urlInput').value = '';
+    document.getElementById('titleInput').value = '';
+  } catch(e) {
+    alert('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg> Add Job';
+  }
+}
+
+async function cancelJob(id) {
+  if (!confirm('Cancel this job?')) return;
+  await fetch(`/api/jobs/${id}/cancel`, {method:'POST'});
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Enter key on URL input
+document.getElementById('urlInput').addEventListener('keydown', e => { if (e.key === 'Enter') addJob(); });
+
+connect();
+</script>
+</body>
+</html>
+
