@@ -12,9 +12,9 @@ import (
 )
 
 type Store struct {
-	mu     sync.RWMutex
-	jobs   map[string]*models.Job
-	videos map[string]*models.Video
+	mu      sync.RWMutex
+	jobs    map[string]*models.Job
+	videos  map[string]*models.Video
 	dataDir string
 }
 
@@ -101,7 +101,9 @@ func (s *Store) SearchVideos(query string) []*models.Video {
 func (s *Store) DeleteVideo(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v, ok := s.videos[id]
+	
+	// මෙතන තිබුණු 'v' වෙනුවට '_' දමා නිවැරදි කර ඇත
+	_, ok := s.videos[id]
 	if !ok {
 		return fmt.Errorf("video not found")
 	}
@@ -127,3 +129,4 @@ func (s *Store) loadVideos() {
 	}
 	json.Unmarshal(data, &s.videos)
 }
+
