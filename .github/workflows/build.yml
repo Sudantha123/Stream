@@ -1,0 +1,30 @@
+name: StreamVault Build Automation
+
+on:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21' # ඔබේ go.mod එකේ අනුව මාරු කරන්න
+
+    - name: Build StreamVault for Linux VPS
+      run: |
+        # AMD64 Linux VPS එක සඳහා build කිරීම (Size එක අඩු කරමින්)
+        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o streamvault ./cmd/main.go
+
+    - name: Upload StreamVault Binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: streamvault-binary
+        path: streamvault
+        
