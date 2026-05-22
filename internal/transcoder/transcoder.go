@@ -60,9 +60,11 @@ func Transcode(ctx context.Context, job *models.Job, inputPath, outputDir string
 	broadcast(job)
 
 	m3u8Path := filepath.Join(outputDir, "index.m3u8")
-	segPattern := filepath.Join(outputDir, "seg%05d.ts")
+	segPattern := filepath.Join(outputDir, "seg%05d.m4s")
+	initSeg := filepath.Join(outputDir, "init.mp4")
 
 	// Ultra-fast: copy mode only, no re-encoding
+	// fMP4 segments: better seek, lower storage, modern browser support
 	args := []string{
 		"-hide_banner",
 		"-loglevel", "info",
@@ -73,7 +75,8 @@ func Transcode(ctx context.Context, job *models.Job, inputPath, outputDir string
 		"-f", "hls",
 		"-hls_time", fmt.Sprintf("%d", segLen),
 		"-hls_list_size", "0",
-		"-hls_segment_type", "mpegts",
+		"-hls_segment_type", "fmp4",
+		"-hls_fmp4_init_filename", filepath.Base(initSeg),
 		"-hls_segment_filename", segPattern,
 		"-hls_flags", "independent_segments",
 		m3u8Path,
@@ -131,7 +134,7 @@ func Transcode(ctx context.Context, job *models.Job, inputPath, outputDir string
 	}
 
 	// Final count of segments
-	entries, _ := filepath.Glob(filepath.Join(outputDir, "*.ts"))
+	entries, _ := filepath.Glob(filepath.Join(outputDir, "*.m4s"))
 	job.Update(func(j *models.Job) {
 		j.TranscodeDone = len(entries)
 		j.TranscodeSegments = len(entries)
