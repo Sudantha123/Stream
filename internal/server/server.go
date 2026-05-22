@@ -103,8 +103,14 @@ func (s *Server) serveHLS(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-	} else if strings.HasSuffix(full, ".ts") {
-		w.Header().Set("Content-Type", "video/MP2T")
+	} else if strings.HasSuffix(full, ".m4s") {
+		// fMP4 media segments
+		w.Header().Set("Content-Type", "video/iso.segment")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+	} else if strings.HasSuffix(full, ".mp4") {
+		// fMP4 init segment (init.mp4)
+		w.Header().Set("Content-Type", "video/mp4")
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 	}
@@ -409,4 +415,3 @@ func (s *Server) galleryPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) watchPage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(s.dataDir, "..", "web", "templates", "watch.html"))
 }
-
