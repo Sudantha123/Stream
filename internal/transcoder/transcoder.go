@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,66 +30,56 @@ func GetDuration(inputPath string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
 }
 
-func Transcode(ctx context.Context, job *models.Job, inputPath, outputDir string, broadcast func(*models.Job)) error {
+// ConvertToFMP4 converts input video to Fragmented MP4 (fMP4) with a global SIDX index
+// using: ffmpeg -i input -movflags frag_keyframe+dash+global_sidx -codec copy output
+// Output file is saved with the same name as input (but in outputDir).
+func ConvertToFMP4(ctx context.Context, job *models.Job, inputPath, outputDir string, broadcast func(*models.Job)) (string, error) {
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return fmt.Errorf("mkdir: %w", err)
+		return "", fmt.Errorf("mkdir: %w", err)
 	}
+
+	// Use the original filename (same name as input)
+	origName := filepath.Base(inputPath)
+	// Strip .tmp extension if present (downloaded tmp file)
+	if strings.HasSuffix(origName, ".tmp") {
+		origName = job.OriginalName
+	}
+	if origName == "" {
+		origName = job.ID + ".mp4"
+	}
+
+	outputPath := filepath.Join(outputDir, origName)
 
 	duration, err := GetDuration(inputPath)
 	if err != nil {
 		duration = 0
 	}
 
-	segLen := job.SegmentLength
-	if segLen <= 0 {
-		segLen = 6
-	}
-
-	totalSegs := 0
-	if duration > 0 {
-		totalSegs = int(math.Ceil(duration / float64(segLen)))
-	}
-
 	job.Update(func(j *models.Job) {
 		j.Status = models.StatusTranscoding
-		j.TranscodeSegments = totalSegs
-		j.TranscodeDone = 0
 		j.TranscodePct = 0
 	})
 	broadcast(job)
 
-	m3u8Path := filepath.Join(outputDir, "index.m3u8")
-	segPattern := filepath.Join(outputDir, "seg%05d.m4s")
-	initSeg := filepath.Join(outputDir, "init.mp4")
-
-	// Ultra-fast: copy mode only, no re-encoding
-	// fMP4 segments: better seek, lower storage, modern browser support
 	args := []string{
 		"-hide_banner",
 		"-loglevel", "info",
 		"-progress", "pipe:2",
 		"-i", inputPath,
-		"-c", "copy",           // NO re-encode
-		"-avoid_negative_ts", "make_zero",
-		"-f", "hls",
-		"-hls_time", fmt.Sprintf("%d", segLen),
-		"-hls_list_size", "0",
-		"-hls_segment_type", "fmp4",
-		"-hls_fmp4_init_filename", filepath.Base(initSeg),
-		"-hls_segment_filename", segPattern,
-		"-hls_flags", "independent_segments",
-		m3u8Path,
+		"-movflags", "frag_keyframe+dash+global_sidx",
+		"-codec", "copy",
+		outputPath,
 	}
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return fmt.Errorf("stderr pipe: %w", err)
+		return "", fmt.Errorf("stderr pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("ffmpeg start: %w", err)
+		return "", fmt.Errorf("ffmpeg start: %w", err)
 	}
 
 	// Parse progress from ffmpeg -progress pipe:2
@@ -99,14 +88,12 @@ func Transcode(ctx context.Context, job *models.Job, inputPath, outputDir string
 		var outTimeMs float64
 		for scanner.Scan() {
 			line := scanner.Text()
-			// Parse out_time_ms=XXXXX
 			if strings.HasPrefix(line, "out_time_ms=") {
 				val, err := strconv.ParseFloat(strings.TrimPrefix(line, "out_time_ms="), 64)
 				if err == nil {
-					outTimeMs = val / 1e6 // to seconds
+					outTimeMs = val / 1e6
 				}
 			}
-			// Also try time= from normal log
 			if m := timeRe.FindStringSubmatch(line); m != nil {
 				h, _ := strconv.ParseFloat(m[1], 64)
 				min, _ := strconv.ParseFloat(m[2], 64)
@@ -115,10 +102,8 @@ func Transcode(ctx context.Context, job *models.Job, inputPath, outputDir string
 			}
 
 			if outTimeMs > 0 && duration > 0 {
-				done := int(math.Floor(outTimeMs / float64(segLen)))
 				pct := (outTimeMs / duration) * 100
 				job.Update(func(j *models.Job) {
-					j.TranscodeDone = done
 					j.TranscodePct = pct
 				})
 				broadcast(job)
@@ -128,20 +113,15 @@ func Transcode(ctx context.Context, job *models.Job, inputPath, outputDir string
 
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return "", ctx.Err()
 		}
-		return fmt.Errorf("ffmpeg: %w", err)
+		return "", fmt.Errorf("ffmpeg: %w", err)
 	}
 
-	// Final count of segments
-	entries, _ := filepath.Glob(filepath.Join(outputDir, "*.m4s"))
 	job.Update(func(j *models.Job) {
-		j.TranscodeDone = len(entries)
-		j.TranscodeSegments = len(entries)
 		j.TranscodePct = 100
 	})
 	broadcast(job)
 
-	return nil
+	return outputPath, nil
 }
-
