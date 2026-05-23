@@ -43,7 +43,7 @@ func New(dataDir string) *Server {
 		dataDir:   dataDir,
 		wsClients: make(map[*websocket.Conn]bool),
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin:     func(r *http.Request) bool { return true },
 			ReadBufferSize:  1024,
 			WriteBufferSize: 4096,
 		},
@@ -63,8 +63,8 @@ func (s *Server) buildRouter() *mux.Router {
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/",
 		http.FileServer(http.Dir(filepath.Join(s.dataDir, "..", "web", "static")))))
 
-	// HLS segments - optimised headers
-	r.PathPrefix("/hls/").HandlerFunc(s.serveHLS)
+	// fMP4 video files - serve with proper headers + range support
+	r.PathPrefix("/videos/").HandlerFunc(s.serveVideo)
 
 	// Thumbnails
 	r.PathPrefix("/thumbs/").Handler(http.StripPrefix("/thumbs/",
@@ -92,28 +92,19 @@ func (s *Server) buildRouter() *mux.Router {
 	return r
 }
 
-// ── HLS serving ─────────────────────────────────────────────────────────────
+// ── fMP4 video serving ───────────────────────────────────────────────────────
 
-func (s *Server) serveHLS(w http.ResponseWriter, r *http.Request) {
-	// Strip /hls/ prefix
-	p := strings.TrimPrefix(r.URL.Path, "/hls/")
-	full := filepath.Join(s.dataDir, "hls", filepath.Clean("/"+p))
+func (s *Server) serveVideo(w http.ResponseWriter, r *http.Request) {
+	// Strip /videos/ prefix
+	p := strings.TrimPrefix(r.URL.Path, "/videos/")
+	full := filepath.Join(s.dataDir, "videos", filepath.Clean("/"+p))
 
-	if strings.HasSuffix(full, ".m3u8") {
-		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-	} else if strings.HasSuffix(full, ".m4s") {
-		// fMP4 media segments
-		w.Header().Set("Content-Type", "video/iso.segment")
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-	} else if strings.HasSuffix(full, ".mp4") {
-		// fMP4 init segment (init.mp4)
-		w.Header().Set("Content-Type", "video/mp4")
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-	}
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Accept-Ranges", "bytes")
+	// Cache: fMP4 is immutable once written
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+
 	http.ServeFile(w, r, full)
 }
 
@@ -135,13 +126,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.wsClients[conn] = true
 	s.wsMu.Unlock()
 
-	// Send current jobs on connect
 	jobs := s.store.AllJobs()
 	for _, j := range jobs {
 		s.sendToConn(conn, models.WSMessage{Type: "job_update", Data: j})
 	}
 
-	// Keep alive - read pump
 	go func() {
 		defer func() {
 			s.wsMu.Lock()
@@ -190,16 +179,27 @@ func jsonErr(w http.ResponseWriter, msg string, code int) {
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-func titleFromURL(rawURL string) string {
+func originalNameFromURL(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Sprintf("video-%s", time.Now().Format("20060102-150405"))
+		return ""
 	}
 	base := path.Base(u.Path)
+	if base == "" || base == "." || base == "/" {
+		return ""
+	}
+	return base
+}
+
+func titleFromURL(rawURL string) string {
+	base := originalNameFromURL(rawURL)
+	if base == "" {
+		return fmt.Sprintf("video-%s", time.Now().Format("20060102-150405"))
+	}
 	name := strings.TrimSuffix(base, path.Ext(base))
 	name = strings.ReplaceAll(name, "_", " ")
 	name = strings.ReplaceAll(name, "-", " ")
-	if name == "" || name == "." || name == "/" {
+	if name == "" {
 		return fmt.Sprintf("video-%s", time.Now().Format("20060102-150405"))
 	}
 	return name
@@ -223,9 +223,21 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, "url required", 400)
 		return
 	}
-	if req.SegmentLength == 0 {
-		req.SegmentLength = 6
+
+	origName := originalNameFromURL(req.URL)
+	if origName == "" {
+		origName = fmt.Sprintf("video-%s.mp4", time.Now().Format("20060102-150405"))
 	}
+	// Ensure .mp4 extension
+	if !strings.HasSuffix(strings.ToLower(origName), ".mp4") {
+		ext := filepath.Ext(origName)
+		if ext != "" {
+			origName = strings.TrimSuffix(origName, ext) + ".mp4"
+		} else {
+			origName = origName + ".mp4"
+		}
+	}
+
 	if req.Title == "" {
 		req.Title = titleFromURL(req.URL)
 	}
@@ -234,14 +246,14 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	job := &models.Job{
-		ID:            id,
-		URL:           req.URL,
-		Title:         req.Title,
-		Status:        models.StatusPending,
-		SegmentLength: req.SegmentLength,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-		CancelFunc:    cancel,
+		ID:           id,
+		URL:          req.URL,
+		Title:        req.Title,
+		OriginalName: origName,
+		Status:       models.StatusPending,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		CancelFunc:   cancel,
 	}
 
 	s.store.AddJob(job)
@@ -303,7 +315,6 @@ func (s *Server) deleteVideo(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, err.Error(), 404)
 		return
 	}
-	// Remove thumbnail
 	os.Remove(filepath.Join(s.dataDir, "thumbs", id+".jpg"))
 	s.broadcast(models.WSMessage{Type: "video_deleted", Data: id})
 	jsonOK(w, map[string]bool{"ok": true})
@@ -313,15 +324,13 @@ func (s *Server) deleteVideo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) processJob(ctx context.Context, job *models.Job) {
 	defer func() {
-		// Clean up temp download file after processing
 		tmpFile := filepath.Join(s.dataDir, "tmp", job.ID+".tmp")
 		os.Remove(tmpFile)
 	}()
 
-	// Ensure dirs
 	tmpDir := filepath.Join(s.dataDir, "tmp")
 	os.MkdirAll(tmpDir, 0755)
-	os.MkdirAll(filepath.Join(s.dataDir, "hls"), 0755)
+	os.MkdirAll(filepath.Join(s.dataDir, "videos"), 0755)
 	os.MkdirAll(filepath.Join(s.dataDir, "thumbs"), 0755)
 
 	tmpFile := filepath.Join(tmpDir, job.ID+".tmp")
@@ -347,39 +356,40 @@ func (s *Server) processJob(ctx context.Context, job *models.Job) {
 	thumbPath := filepath.Join(s.dataDir, "thumbs", job.ID+".jpg")
 	thumbnailer.Extract(tmpFile, thumbPath, duration)
 
-	// 4. Transcode to HLS
-	hlsDir := filepath.Join(s.dataDir, "hls", job.ID)
-	log.Printf("[job %s] transcoding to HLS (seg=%ds)", job.ID, job.SegmentLength)
-	if err := transcoder.Transcode(ctx, job, tmpFile, hlsDir, s.broadcastJob); err != nil {
+	// 4. Convert to fMP4 (fragmented, with global SIDX index)
+	videosDir := filepath.Join(s.dataDir, "videos")
+	log.Printf("[job %s] converting to fMP4: %s", job.ID, job.OriginalName)
+	outputPath, err := transcoder.ConvertToFMP4(ctx, job, tmpFile, videosDir, s.broadcastJob)
+	if err != nil {
 		if ctx.Err() != nil {
 			job.Update(func(j *models.Job) { j.Status = models.StatusCancelled })
 			s.broadcastJob(job)
-			os.RemoveAll(hlsDir)
 			return
 		}
-		s.failJob(job, fmt.Sprintf("transcode: %v", err))
+		s.failJob(job, fmt.Sprintf("convert: %v", err))
 		return
 	}
 
 	// 5. Register video
-	video := &models.Video{
-		ID:        job.ID,
-		Title:     job.Title,
-		Thumbnail: "/thumbs/" + job.ID + ".jpg",
-		Duration:  duration,
-		CreatedAt: time.Now(),
-		M3U8Path:  "/hls/" + job.ID + "/index.m3u8",
+	// FMP4Path = /videos/<original_name>
+	fmp4Path := "/videos/" + job.OriginalName
+
+	fi, _ := os.Stat(outputPath)
+	var sizeBytes int64
+	if fi != nil {
+		sizeBytes = fi.Size()
 	}
 
-	// Get size of HLS dir
-	var hlsSize int64
-	filepath.Walk(hlsDir, func(_ string, fi os.FileInfo, _ error) error {
-		if fi != nil && !fi.IsDir() {
-			hlsSize += fi.Size()
-		}
-		return nil
-	})
-	video.SizeBytes = hlsSize
+	video := &models.Video{
+		ID:           job.ID,
+		Title:        job.Title,
+		OriginalName: job.OriginalName,
+		Thumbnail:    "/thumbs/" + job.ID + ".jpg",
+		Duration:     duration,
+		SizeBytes:    sizeBytes,
+		CreatedAt:    time.Now(),
+		FMP4Path:     fmp4Path,
+	}
 
 	s.store.AddVideo(video)
 	s.store.RemoveJob(job.ID)
@@ -390,7 +400,7 @@ func (s *Server) processJob(ctx context.Context, job *models.Job) {
 		"video": video,
 	}})
 
-	log.Printf("[job %s] done → %s", job.ID, video.Title)
+	log.Printf("[job %s] done → %s (%s)", job.ID, video.Title, fmp4Path)
 }
 
 func (s *Server) failJob(job *models.Job, msg string) {
@@ -415,3 +425,4 @@ func (s *Server) galleryPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) watchPage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(s.dataDir, "..", "web", "templates", "watch.html"))
 }
+
