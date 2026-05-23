@@ -18,23 +18,21 @@ const (
 )
 
 type Job struct {
-	ID            string    `json:"id"`
-	URL           string    `json:"url"`
-	Title         string    `json:"title"`
-	Status        JobStatus `json:"status"`
-	SegmentLength int       `json:"segment_length"` // seconds
+	ID           string    `json:"id"`
+	URL          string    `json:"url"`
+	Title        string    `json:"title"`
+	OriginalName string    `json:"original_name"` // original filename from URL
+	Status       JobStatus `json:"status"`
 
 	// Download progress
 	DownloadedBytes int64   `json:"downloaded_bytes"`
 	TotalBytes      int64   `json:"total_bytes"`
-	DownloadSpeed   float64 `json:"download_speed"`  // bytes/sec
-	DownloadETA     float64 `json:"download_eta"`    // seconds
+	DownloadSpeed   float64 `json:"download_speed"`
+	DownloadETA     float64 `json:"download_eta"`
 	DownloadPct     float64 `json:"download_pct"`
 
-	// Transcode progress
-	TranscodeSegments int `json:"transcode_segments"`
-	TranscodeDone     int `json:"transcode_done"`
-	TranscodePct      float64 `json:"transcode_pct"`
+	// fMP4 conversion progress
+	TranscodePct float64 `json:"transcode_pct"`
 
 	Error     string    `json:"error,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
@@ -52,19 +50,19 @@ func (j *Job) Update(fn func(*Job)) {
 }
 
 type Video struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Thumbnail string    `json:"thumbnail"`
-	Duration  float64   `json:"duration"`
-	SizeBytes int64     `json:"size_bytes"`
-	CreatedAt time.Time `json:"created_at"`
-	M3U8Path  string    `json:"m3u8_path"`
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	OriginalName string    `json:"original_name"` // filename for streaming URL
+	Thumbnail    string    `json:"thumbnail"`
+	Duration     float64   `json:"duration"`
+	SizeBytes    int64     `json:"size_bytes"`
+	CreatedAt    time.Time `json:"created_at"`
+	FMP4Path     string    `json:"fmp4_path"` // e.g. /videos/Mr. X (2026).mp4
 }
 
 type AddJobRequest struct {
-	URL           string `json:"url"`
-	Title         string `json:"title"`
-	SegmentLength int    `json:"segment_length"`
+	URL   string `json:"url"`
+	Title string `json:"title"`
 }
 
 type WSMessage struct {
