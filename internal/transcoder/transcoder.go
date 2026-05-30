@@ -30,17 +30,17 @@ func GetDuration(inputPath string) (float64, error) {
 	return strconv.ParseFloat(s, 64)
 }
 
-// ConvertToFMP4 converts input video to Fragmented MP4 (fMP4).
-// Uses frag_keyframe+empty_moov+default_base_is_moof which writes fragments
-// incrementally — global_sidx ඉවත් කළා, ඒ flag නිසා EOF වෙලාවේ
-// සම්පූර්ණ file remux කරනවා (30-45s freeze).
-// Progress stdout හරහා parse කරනවා (-progress pipe:1).
+// ConvertToFMP4 converts input video to Fragmented MP4 (fMP4) with a global SIDX index
+// using: ffmpeg -i input -movflags frag_keyframe+dash+global_sidx -codec copy output
+// Output file is saved with the same name as input (but in outputDir).
 func ConvertToFMP4(ctx context.Context, job *models.Job, inputPath, outputDir string, broadcast func(*models.Job)) (string, error) {
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return "", fmt.Errorf("mkdir: %w", err)
 	}
 
+	// Use the original filename (same name as input)
 	origName := filepath.Base(inputPath)
+	// Strip .tmp extension if present (downloaded tmp file)
 	if strings.HasSuffix(origName, ".tmp") {
 		origName = job.OriginalName
 	}
@@ -63,53 +63,46 @@ func ConvertToFMP4(ctx context.Context, job *models.Job, inputPath, outputDir st
 
 	args := []string{
 		"-hide_banner",
-		"-loglevel", "error",
-		"-progress", "pipe:1", // stdout හරහා progress
+		"-loglevel", "info",
+		"-progress", "pipe:2",
 		"-i", inputPath,
-		// global_sidx remove: EOF remux freeze නෑ
-		// empty_moov+default_base_is_moof: streaming-safe fMP4
-		"-movflags", "frag_keyframe+empty_moov+default_base_is_moof",
+		"-movflags", "frag_keyframe+dash+global_sidx",
 		"-codec", "copy",
-		"-y",
 		outputPath,
 	}
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
-	stdoutPipe, err := cmd.StdoutPipe()
+	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return "", fmt.Errorf("stdout pipe: %w", err)
+		return "", fmt.Errorf("stderr pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("ffmpeg start: %w", err)
 	}
 
-	// Progress stdout (pipe:1) scanner goroutine
-	progressDone := make(chan struct{})
+	// Parse progress from ffmpeg -progress pipe:2
 	go func() {
-		defer close(progressDone)
-		scanner := bufio.NewScanner(stdoutPipe)
+		scanner := bufio.NewScanner(stderr)
+		var outTimeMs float64
 		for scanner.Scan() {
 			line := scanner.Text()
-			var outTimeSec float64
 			if strings.HasPrefix(line, "out_time_ms=") {
 				val, err := strconv.ParseFloat(strings.TrimPrefix(line, "out_time_ms="), 64)
-				if err == nil && val > 0 {
-					outTimeSec = val / 1e6
+				if err == nil {
+					outTimeMs = val / 1e6
 				}
-			} else if m := timeRe.FindStringSubmatch(line); m != nil {
+			}
+			if m := timeRe.FindStringSubmatch(line); m != nil {
 				h, _ := strconv.ParseFloat(m[1], 64)
 				min, _ := strconv.ParseFloat(m[2], 64)
 				sec, _ := strconv.ParseFloat(m[3], 64)
-				outTimeSec = h*3600 + min*60 + sec
+				outTimeMs = h*3600 + min*60 + sec
 			}
 
-			if outTimeSec > 0 && duration > 0 {
-				pct := (outTimeSec / duration) * 100
-				if pct > 99 {
-					pct = 99
-				}
+			if outTimeMs > 0 && duration > 0 {
+				pct := (outTimeMs / duration) * 100
 				job.Update(func(j *models.Job) {
 					j.TranscodePct = pct
 				})
@@ -119,14 +112,11 @@ func ConvertToFMP4(ctx context.Context, job *models.Job, inputPath, outputDir st
 	}()
 
 	if err := cmd.Wait(); err != nil {
-		<-progressDone
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
 		return "", fmt.Errorf("ffmpeg: %w", err)
 	}
-
-	<-progressDone
 
 	job.Update(func(j *models.Job) {
 		j.TranscodePct = 100
