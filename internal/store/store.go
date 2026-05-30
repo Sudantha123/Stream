@@ -101,15 +101,14 @@ func (s *Store) SearchVideos(query string) []*models.Video {
 func (s *Store) DeleteVideo(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
-	// මෙතන තිබුණු 'v' වෙනුවට '_' දමා නිවැරදි කර ඇත
-	_, ok := s.videos[id]
+
+	v, ok := s.videos[id]
 	if !ok {
 		return fmt.Errorf("video not found")
 	}
-	// Remove HLS directory
-	videoDir := filepath.Join(s.dataDir, "hls", id)
-	os.RemoveAll(videoDir)
+	// Remove the fMP4 video file from /data/videos/
+	videoFile := filepath.Join(s.dataDir, "videos", v.OriginalName)
+	os.Remove(videoFile)
 	delete(s.videos, id)
 	s.saveVideos()
 	return nil
@@ -129,4 +128,5 @@ func (s *Store) loadVideos() {
 	}
 	json.Unmarshal(data, &s.videos)
 }
+
 
