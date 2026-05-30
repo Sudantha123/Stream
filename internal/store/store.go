@@ -106,9 +106,16 @@ func (s *Store) DeleteVideo(id string) error {
 	if !ok {
 		return fmt.Errorf("video not found")
 	}
-	// Remove the fMP4 video file from /data/videos/
-	videoFile := filepath.Join(s.dataDir, "videos", v.OriginalName)
-	os.Remove(videoFile)
+
+	// Remove the actual fMP4 video file from /data/videos/
+	if v.OriginalName != "" {
+		videoFile := filepath.Join(s.dataDir, "videos", v.OriginalName)
+		os.Remove(videoFile)
+	}
+
+	// Also clean up legacy HLS directory if it exists
+	os.RemoveAll(filepath.Join(s.dataDir, "hls", id))
+
 	delete(s.videos, id)
 	s.saveVideos()
 	return nil
