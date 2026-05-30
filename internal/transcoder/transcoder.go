@@ -66,7 +66,7 @@ func ConvertToFMP4(ctx context.Context, job *models.Job, inputPath, outputDir st
 		"-loglevel", "info",
 		"-progress", "pipe:2",
 		"-i", inputPath,
-		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+		"-movflags", "frag_keyframe+dash+global_sidx",
 		"-codec", "copy",
 		outputPath,
 	}
@@ -86,7 +86,6 @@ func ConvertToFMP4(ctx context.Context, job *models.Job, inputPath, outputDir st
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		var outTimeMs float64
-		var lastPct float64
 		for scanner.Scan() {
 			line := scanner.Text()
 			if strings.HasPrefix(line, "out_time_ms=") {
@@ -104,13 +103,10 @@ func ConvertToFMP4(ctx context.Context, job *models.Job, inputPath, outputDir st
 
 			if outTimeMs > 0 && duration > 0 {
 				pct := (outTimeMs / duration) * 100
-				if pct-lastPct >= 1.0 { // broadcast only every 1% change
-					lastPct = pct
-					job.Update(func(j *models.Job) {
-						j.TranscodePct = pct
-					})
-					broadcast(job)
-				}
+				job.Update(func(j *models.Job) {
+					j.TranscodePct = pct
+				})
+				broadcast(job)
 			}
 		}
 	}()
